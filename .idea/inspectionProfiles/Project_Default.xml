@@ -1,0 +1,32 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <value>
+          <list size="19">
+            <item index="0" class="java.lang.String" itemvalue="typing_extensions" />
+            <item index="1" class="java.lang.String" itemvalue="pydantic_core" />
+            <item index="2" class="java.lang.String" itemvalue="pyproject_hooks" />
+            <item index="3" class="java.lang.String" itemvalue="python-magic-debian-bin" />
+            <item index="4" class="java.lang.String" itemvalue="llama-index-core" />
+            <item index="5" class="java.lang.String" itemvalue="langchain-community" />
+            <item index="6" class="java.lang.String" itemvalue="pydantic-settings" />
+            <item index="7" class="java.lang.String" itemvalue="boto3" />
+            <item index="8" class="java.lang.String" itemvalue="pydantic" />
+            <item index="9" class="java.lang.String" itemvalue="botocore" />
+            <item index="10" class="java.lang.String" itemvalue="langchain" />
+            <item index="11" class="java.lang.String" itemvalue="langchain-core" />
+            <item index="12" class="java.lang.String" itemvalue="langchain-text-splitters" />
+            <item index="13" class="java.lang.String" itemvalue="langsmith" />
+            <item index="14" class="java.lang.String" itemvalue="anyio" />
+            <item index="15" class="java.lang.String" itemvalue="pandas" />
+            <item index="16" class="java.lang.String" itemvalue="fitz" />
+            <item index="17" class="java.lang.String" itemvalue="django-storages" />
+            <item index="18" class="java.lang.String" itemvalue="s3transfer" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
