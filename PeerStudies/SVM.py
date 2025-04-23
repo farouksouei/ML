@@ -786,3 +786,164 @@ class PeerStudiesSVM:
         # Sort by match score and return top matches
         recommendations.sort(key=lambda x: x['match_score'], reverse=True)
         return recommendations[:top_n]
+
+    def evaluate_model(self, X_test=None, y_test=None, cv=5):
+        """
+        Evaluate the model using various metrics.
+
+        Parameters:
+        -----------
+        X_test : array-like or None, default=None
+            Test features for evaluation. If None, uses cross-validation on training data.
+        y_test : array-like or None, default=None
+            Test labels for evaluation. Must be provided if X_test is provided.
+        cv : int, default=5
+            Number of cross-validation folds when X_test is None.
+
+        Returns:
+        --------
+        dict
+            Dictionary containing evaluation metrics:
+            - accuracy: overall classification accuracy
+            - precision: precision score
+            - recall: recall score
+            - f1: F1 score
+            - mse: mean squared error (for probability predictions)
+            - cross_validation: scores from cross-validation (if used)
+        """
+        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error
+        from sklearn.model_selection import cross_val_score
+        import numpy as np
+
+        # Check if model is fitted
+        if not hasattr(self, 'svm_model') or self.svm_model is None:
+            raise ValueError("Model not fitted. Call fit_svm() first.")
+
+        # Check for success column
+        if 'success' not in self.df.columns:
+            raise ValueError("Success column required for evaluation")
+
+        results = {}
+
+        # Evaluate on provided test data
+        if X_test is not None and y_test is not None:
+            # Make predictions
+            y_pred = self.svm_model.predict(X_test)
+            y_pred_proba = self.svm_model.predict_proba(X_test)[:, 1]
+
+            # Calculate metrics
+            results['accuracy'] = accuracy_score(y_test, y_pred)
+            results['precision'] = precision_score(y_test, y_pred, zero_division=0)
+            results['recall'] = recall_score(y_test, y_pred, zero_division=0)
+            results['f1'] = f1_score(y_test, y_pred, zero_division=0)
+            results['mse'] = mean_squared_error(y_test, y_pred_proba)
+
+        # Use cross-validation on training data
+        else:
+            X = self.feature_matrix
+            y = self.df['success']
+
+            # Calculate cross-validation metrics
+            cv_accuracy = cross_val_score(self.svm_model, X, y, cv=cv, scoring='accuracy')
+            cv_precision = cross_val_score(self.svm_model, X, y, cv=cv, scoring='precision')
+            cv_recall = cross_val_score(self.svm_model, X, y, cv=cv, scoring='recall')
+            cv_f1 = cross_val_score(self.svm_model, X, y, cv=cv, scoring='f1')
+            cv_neg_mse = cross_val_score(self.svm_model, X, y, cv=cv, scoring='neg_mean_squared_error')
+
+            # Store cross-validation results
+            results['cross_validation'] = {
+                'accuracy_mean': np.mean(cv_accuracy),
+                'accuracy_std': np.std(cv_accuracy),
+                'precision_mean': np.mean(cv_precision),
+                'precision_std': np.std(cv_precision),
+                'recall_mean': np.mean(cv_recall),
+                'recall_std': np.std(cv_recall),
+                'f1_mean': np.mean(cv_f1),
+                'f1_std': np.std(cv_f1),
+                'mse_mean': -np.mean(cv_neg_mse),  # Convert negative MSE back to positive
+                'mse_std': np.std(cv_neg_mse)
+            }
+
+            # For convenience, add the mean scores to the top level
+            results['accuracy'] = results['cross_validation']['accuracy_mean']
+            results['precision'] = results['cross_validation']['precision_mean']
+            results['recall'] = results['cross_validation']['recall_mean']
+            results['f1'] = results['cross_validation']['f1_mean']
+            results['mse'] = results['cross_validation']['mse_mean']
+
+        # Visualize results if needed
+        self._visualize_evaluation(results)
+
+        return results
+
+    def _visualize_evaluation(self, results):
+        """Visualize evaluation results"""
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import os
+
+        os.makedirs('charts/evaluation', exist_ok=True)
+
+        # Create bar chart of main metrics
+        plt.figure(figsize=(10, 6))
+        metrics = ['accuracy', 'precision', 'recall', 'f1']
+        values = [results[metric] for metric in metrics]
+
+        bars = plt.bar(metrics, values, color=['#5DA5DA', '#FAA43A', '#60BD68', '#F17CB0'])
+
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            plt.text(bar.get_x() + bar.get_width() / 2., height + 0.02,
+                     f'{height:.3f}', ha='center', va='bottom')
+
+        plt.ylim(0, 1.1)
+        plt.title('Model Performance Metrics')
+        plt.ylabel('Score')
+
+        # Add MSE as text since it's on a different scale
+        plt.figtext(0.7, 0.15, f'MSE: {results["mse"]:.4f}', fontsize=12,
+                    bbox={'facecolor': 'lightgrey', 'alpha': 0.5, 'pad': 5})
+
+        plt.tight_layout()
+        plt.savefig('charts/evaluation/model_metrics.png')
+        plt.close()
+
+        # Create cross-validation visualization if available
+        if 'cross_validation' in results:
+            cv_results = results['cross_validation']
+
+            plt.figure(figsize=(12, 7))
+
+            # Prepare data
+            metric_names = ['Accuracy', 'Precision', 'Recall', 'F1 Score']
+            means = [cv_results['accuracy_mean'], cv_results['precision_mean'],
+                     cv_results['recall_mean'], cv_results['f1_mean']]
+            stds = [cv_results['accuracy_std'], cv_results['precision_std'],
+                    cv_results['recall_std'], cv_results['f1_std']]
+
+            x = np.arange(len(metric_names))
+            width = 0.6
+
+            # Create bars with error bars
+            plt.bar(x, means, width, yerr=stds, capsize=10,
+                    color=['#5DA5DA', '#FAA43A', '#60BD68', '#F17CB0'])
+
+            # Add value labels
+            for i, v in enumerate(means):
+                plt.text(i, v + stds[i] + 0.02, f'{v:.3f}±{stds[i]:.3f}',
+                         ha='center', va='bottom', fontsize=9)
+
+            plt.ylim(0, 1.1)
+            plt.title('Cross-Validation Metrics (Mean ± Std)')
+            plt.xticks(x, metric_names)
+            plt.ylabel('Score')
+
+            # Add MSE as text
+            plt.figtext(0.7, 0.15,
+                        f'MSE: {cv_results["mse_mean"]:.4f} ± {cv_results["mse_std"]:.4f}',
+                        fontsize=12, bbox={'facecolor': 'lightgrey', 'alpha': 0.5, 'pad': 5})
+
+            plt.tight_layout()
+            plt.savefig('charts/evaluation/cv_metrics.png')
+            plt.close()
