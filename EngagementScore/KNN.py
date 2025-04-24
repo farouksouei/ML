@@ -214,7 +214,7 @@ class UserEngagementProcessor:
 
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.25, random_state=42, stratify=y
+            X, y, test_size=0.20, random_state=42, stratify=y
         )
 
         # Create pipeline with scaling
@@ -312,7 +312,7 @@ if __name__ == "__main__":
     processor.visualize_engagement_distribution()
 
     # Run KNN classifier
-    results = processor.run_knn_classifier(n_neighbors=3)
+    results = processor.run_knn_classifier(n_neighbors=6, cv_folds=5)
 
     # Print results
     print("\nClassification Results for KNN:")
