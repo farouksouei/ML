@@ -1,324 +1,229 @@
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, mean_squared_error
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split, cross_val_score, KFold
-from sklearn.preprocessing import StandardScaler
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix, roc_curve, auc
-from sklearn.pipeline import Pipeline
-from datetime import datetime
 import os
+from datetime import datetime
 
+# Ensure chart directories exist
+os.makedirs('charts/knn', exist_ok=True)
 
-class UserEngagementProcessor:
-    def __init__(self, file_path=None, data=None):
-        """Initialize with either file path or data."""
-        # Create visualization directory
-        os.makedirs('charts/engagement', exist_ok=True)
+# Load data
+data = pd.read_csv('../data/edited_skill_exchange_dataset.csv')
+df = pd.DataFrame(data)
 
-        if file_path:
-            self.load_data_from_file(file_path)
-        elif data is not None:
-            if isinstance(data, pd.DataFrame):
-                self.df = data.copy()
-            else:
-                self.df = pd.DataFrame(data)
-        else:
-            self.df = pd.DataFrame()
+# Data Preprocessing
+df['joinedDate'] = pd.to_datetime(df['joinedDate'])
+df['days_since_joining'] = (pd.Timestamp.now() - df['joinedDate']).dt.days
 
-    def load_data_from_file(self, file_path):
-        """Load data from CSV file."""
-        try:
-            self.df = pd.read_csv(file_path)
-        except Exception as e:
-            print(f"Error loading data: {e}")
-            self.df = pd.DataFrame()
+# Function to safely split text fields and count items
+def count_items(text):
+    if pd.isna(text) or not isinstance(text, str):
+        return 0
+    items = [item.strip() for item in text.split(',') if item.strip()]
+    return len(items)
 
-    def clean_data(self):
-        """Clean and preprocess the data."""
-        # Check if the data is already loaded with column names
-        if self.df.shape[0] > 0 and not all(isinstance(col, str) for col in self.df.columns):
-            # Rename columns
-            self.df.columns = ['user_id', 'joinedDate', 'joinedCourses', 'skills', 'desired_skills', 'isVerified']
+# Count-based features
+df['num_joined_courses'] = df['joinedCourses'].apply(count_items)
+df['num_skills'] = df['skills'].apply(count_items)
+df['num_desired_skills'] = df['desired_skills'].apply(count_items)
 
-        # Convert date strings to datetime objects
-        try:
-            self.df['joinedDate'] = pd.to_datetime(self.df['joinedDate'])
-        except Exception as e:
-            print(f"Warning: Error converting joinedDate to datetime: {e}")
-            # If error, create a days_since_joined column with default values
-            self.df['days_since_joined'] = 365  # Default value
-        else:
-            # Calculate days since joined
-            self.df['days_since_joined'] = (datetime.now() - self.df['joinedDate']).dt.days
+# Convert string lists to actual lists for intersection operations
+def string_to_list(text):
+    if pd.isna(text) or not isinstance(text, str):
+        return []
+    return [item.strip() for item in text.split(',') if item.strip()]
 
-        # Convert course and skill strings to lists
-        self.df['joinedCourses'] = self.df['joinedCourses'].apply(self._string_to_list)
-        self.df['skills'] = self.df['skills'].apply(self._string_to_list)
-        self.df['desired_skills'] = self.df['desired_skills'].apply(self._string_to_list)
+df['joined_courses_list'] = df['joinedCourses'].apply(string_to_list)
+df['skills_list'] = df['skills'].apply(string_to_list)
+df['desired_skills_list'] = df['desired_skills'].apply(string_to_list)
 
-        # Convert verification status to boolean if it's not already
-        self.df['isVerified'] = self.df['isVerified'].map(
-            lambda x: True if str(x).lower() == 'true' else False
-        )
+# Count overlaps between different skill categories
+df['skills_courses_overlap'] = df.apply(
+    lambda x: len(set(x['skills_list']).intersection(set(x['joined_courses_list']))), axis=1
+)
+df['desired_courses_overlap'] = df.apply(
+    lambda x: len(set(x['desired_skills_list']).intersection(set(x['joined_courses_list']))), axis=1
+)
+df['skills_desired_overlap'] = df.apply(
+    lambda x: len(set(x['skills_list']).intersection(set(x['desired_skills_list']))), axis=1
+)
 
-        # Add derived features
-        self.df['course_count'] = self.df['joinedCourses'].apply(len)
-        self.df['skill_count'] = self.df['skills'].apply(len)
-        self.df['desired_skill_count'] = self.df['desired_skills'].apply(len)
+# Calculate ratios to represent learning progress
+df['course_effectiveness'] = df.apply(
+    lambda x: x['desired_courses_overlap'] / x['num_joined_courses'] if x['num_joined_courses'] > 0 else 0,
+    axis=1
+)
+df['skills_acquisition_rate'] = df.apply(
+    lambda x: x['skills_desired_overlap'] / x['num_desired_skills'] if x['num_desired_skills'] > 0 else 0,
+    axis=1
+)
+df['learning_gap'] = df.apply(
+    lambda x: x['num_desired_skills'] - x['skills_desired_overlap'], axis=1
+)
 
-        # Calculate skill gaps (desired skills not in current skills)
-        self.df['skill_gap'] = self.df.apply(
-            lambda x: [skill for skill in x['desired_skills'] if skill not in x['skills']],
-            axis=1
-        )
-        self.df['skill_gap_count'] = self.df['skill_gap'].apply(len)
+# Convert isVerified to numeric
+df['isVerified'] = df['isVerified'].map(lambda x: 1 if str(x).lower() == 'true' else 0)
 
-        # Add engagement level based on course count
-        self.df['engagement_level'] = self.df['course_count'].apply(self._categorize_engagement)
+# Features for the model (focusing on counts and numeric relationships)
+features = [
+    'days_since_joining',
+    'num_joined_courses',
+    'num_skills',
+    'num_desired_skills',
+    'skills_courses_overlap',
+    'desired_courses_overlap',
+    'skills_desired_overlap',
+    'course_effectiveness',
+    'skills_acquisition_rate',
+    'learning_gap',
+    'isVerified'
+]
 
-        # Add popular skills presence
-        self._add_popular_skill_features()
+# Select features that exist in dataframe
+X = df[features]
+y = df['engagement_level']
 
-        return self
+# Encode the target variable
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
 
-    def _add_popular_skill_features(self):
-        """Add binary features for popular skills."""
-        popular_skills = ['JavaScript', 'Python', 'SQL', 'HTML', 'CSS', 'Java', 'Node.js', 'AI', 'Machine Learning']
+# Split data
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.25, random_state=42)
 
-        for skill in popular_skills:
-            skill_key = skill.lower().replace(".", "").replace(" ", "_")
-            self.df[f'has_{skill_key}'] = self.df['skills'].apply(
-                lambda skills: 1 if skill in skills else 0
-            )
-            self.df[f'wants_{skill_key}'] = self.df['desired_skills'].apply(
-                lambda skills: 1 if skill in skills else 0
-            )
+# Create pipeline with scaling and KNN
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('knn', KNeighborsClassifier())
+])
 
-    def _string_to_list(self, skills_str):
-        """Convert a string of skills to a list."""
-        # Handle the case when skills_str is a Series or array
-        if isinstance(skills_str, (pd.Series, list, np.ndarray)):
-            return [self._string_to_list(item) for item in skills_str]
+# Grid search for hyperparameter tuning
+param_grid = {
+    'knn__n_neighbors': [3, 5, 7, 9, 11],
+    'knn__weights': ['uniform', 'distance'],
+    'knn__metric': ['euclidean', 'manhattan']
+}
 
-        # Handle null values, empty strings, and "Unknown"
-        if pd.isna(skills_str) or skills_str == "" or skills_str == "Unknown":
-            return []
+grid_search = GridSearchCV(pipeline, param_grid, cv=3, scoring='f1_weighted')
+grid_search.fit(X_train, y_train)
 
-        # Remove quotes, brackets and split by comma
-        if isinstance(skills_str, str):
-            skills_str = skills_str.strip('"[]\'')
-            # Split by comma and strip whitespace and quotes from each item
-            skills_list = [item.strip().strip('"\'') for item in skills_str.split(',')]
-            return [item for item in skills_list if item]  # Remove empty items
+best_pipeline = grid_search.best_estimator_
+print(f"Best parameters: {grid_search.best_params_}")
 
-        return []  # Default return empty list for any other case
+# Evaluate model
+y_pred = best_pipeline.predict(X_test)
 
-    def _categorize_engagement(self, course_count):
-        """Categorize engagement level based on course count."""
-        if course_count >= 4:
-            return "Highly Engaged"
-        elif course_count >= 2:
-            return "Moderately Engaged"
-        else:
-            return "Minimally Engaged"
+# Calculate metrics
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred, average='weighted')
+recall = recall_score(y_test, y_pred, average='weighted')
+f1 = f1_score(y_test, y_pred, average='weighted')
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
-    def visualize_engagement_distribution(self):
-        """Visualize distribution of engagement levels."""
-        if 'engagement_level' not in self.df.columns:
-            print("Error: engagement_level column not found. Run clean_data() first.")
-            return
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"F1 Score: {f1:.4f}")
+print(f"RMSE: {rmse:.4f}")
 
-        plt.figure(figsize=(10, 6))
-        sns.countplot(x='engagement_level', data=self.df, palette='viridis')
-        plt.title('Distribution of User Engagement Levels', fontsize=14)
-        plt.xlabel('Engagement Level', fontsize=12)
-        plt.ylabel('Count', fontsize=12)
-        plt.tight_layout()
-        plt.savefig('charts/engagement/engagement_distribution.png')
-        plt.close()
+# Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(10, 8))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+            xticklabels=le.classes_, yticklabels=le.classes_)
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.title('Confusion Matrix')
+plt.tight_layout()
+plt.savefig('charts/knn/confusion_matrix.png')
+plt.close()
 
-        # Also visualize relationship between features and engagement
-        self._visualize_feature_relationships()
+# Feature importance using permutation method
+feature_importance = []
+base_accuracy = accuracy_score(y_test, y_pred)
 
-    def _visualize_feature_relationships(self):
-        """Visualize relationships between features and engagement level."""
-        # Select features to visualize
-        features = []
+for i, feature in enumerate(features):
+    # Make a copy of the test data
+    X_test_permuted = X_test.copy()
+    # Shuffle values for current feature
+    X_test_permuted[feature] = np.random.permutation(X_test_permuted[feature].values)
+    # Predict with shuffled feature
+    y_permuted_pred = best_pipeline.predict(X_test_permuted)
+    # Calculate accuracy drop
+    accuracy_drop = base_accuracy - accuracy_score(y_test, y_permuted_pred)
+    feature_importance.append(accuracy_drop)
 
-        # Add features only if they exist
-        if 'days_since_joined' in self.df.columns:
-            features.append('days_since_joined')
-        if 'course_count' in self.df.columns:
-            features.append('course_count')
-        if 'skill_count' in self.df.columns:
-            features.append('skill_count')
-        if 'desired_skill_count' in self.df.columns:
-            features.append('desired_skill_count')
-        if 'skill_gap_count' in self.df.columns:
-            features.append('skill_gap_count')
+# Visualize feature importance
+feature_importance_df = pd.DataFrame({
+    'Feature': features,
+    'Importance': feature_importance
+})
+feature_importance_df = feature_importance_df.sort_values('Importance', ascending=False)
 
-        if not features:
-            print("Warning: No features available for visualization.")
-            return
+plt.figure(figsize=(12, 8))
+sns.barplot(x='Importance', y='Feature', data=feature_importance_df)
+plt.title('Feature Importance (Impact on Model Accuracy)')
+plt.tight_layout()
+plt.savefig('charts/knn/feature_importance.png')
+plt.close()
 
-        plt.figure(figsize=(15, 12))
-        for i, feature in enumerate(features, 1):
-            plt.subplot(len(features), 1, i)
-            sns.boxplot(x='engagement_level', y=feature, data=self.df, palette='coolwarm')
-            plt.title(f'{feature.replace("_", " ").title()} by Engagement Level', fontsize=12)
-            plt.xlabel('Engagement Level', fontsize=10)
-            plt.ylabel(feature.replace("_", " ").title(), fontsize=10)
-            plt.xticks(rotation=45)
+# Find optimal K value
+k_values = list(range(1, 21, 2))
+accuracy_scores = []
 
-        plt.tight_layout()
-        plt.savefig('charts/engagement/feature_relationships.png')
-        plt.close()
+for k in k_values:
+    temp_pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('knn', KNeighborsClassifier(n_neighbors=k))
+    ])
+    temp_pipeline.fit(X_train, y_train)
+    y_pred_k = temp_pipeline.predict(X_test)
+    accuracy_scores.append(accuracy_score(y_test, y_pred_k))
 
-    def prepare_features(self):
-        """Prepare features for the classification model."""
-        # Select relevant features that definitely exist
-        features = []
+plt.figure(figsize=(10, 6))
+plt.plot(k_values, accuracy_scores, marker='o')
+plt.title('Accuracy vs. k Value')
+plt.xlabel('k Value')
+plt.ylabel('Accuracy')
+plt.grid(True)
+plt.savefig('charts/knn/accuracy_vs_k.png')
+plt.close()
 
-        # Check if each feature exists in the DataFrame
-        potential_features = ['days_since_joined', 'skill_count', 'desired_skill_count',
-                              'skill_gap_count', 'isVerified']
+# Create summary report
+with open('charts/knn/model_summary.txt', 'w') as f:
+    f.write("KNN Model for User Engagement Prediction\n")
+    f.write("=======================================\n\n")
 
-        for feature in potential_features:
-            if feature in self.df.columns:
-                features.append(feature)
+    f.write("1. Data Preprocessing Steps:\n")
+    f.write("   - Converted joinedDate to datetime\n")
+    f.write("   - Created days_since_joining feature\n")
+    f.write("   - Counted items in joinedCourses, skills, and desired_skills\n")
+    f.write("   - Calculated overlaps between different skill categories\n")
+    f.write("   - Added derived features for learning progress and effectiveness\n\n")
 
-        # Add popular skill features that exist
-        feature_cols = [col for col in self.df.columns if col.startswith('has_') or col.startswith('wants_')]
-        features.extend(feature_cols)
+    f.write("2. Features Used:\n")
+    for feature in features:
+        f.write(f"   - {feature}\n")
+    f.write("\n")
 
-        if not features:
-            raise ValueError("No features available for classification. Check data preprocessing.")
+    f.write("3. Best Model Parameters:\n")
+    for param, value in grid_search.best_params_.items():
+        f.write(f"   - {param}: {value}\n")
+    f.write("\n")
 
-        # Create feature matrix
-        X = self.df[features].copy()
+    f.write("4. Evaluation Metrics:\n")
+    f.write(f"   - Accuracy: {accuracy:.4f}\n")
+    f.write(f"   - Precision: {precision:.4f}\n")
+    f.write(f"   - Recall: {recall:.4f}\n")
+    f.write(f"   - F1 Score: {f1:.4f}\n")
+    f.write(f"   - RMSE: {rmse:.4f}\n\n")
 
-        # Convert boolean to integer if necessary
-        if 'isVerified' in X.columns and X['isVerified'].dtype == bool:
-            X['isVerified'] = X['isVerified'].astype(int)
-
-        # Target variable
-        y = self.df['engagement_level']
-
-        return X, y
-
-    def run_knn_classifier(self, n_neighbors=5, cv_folds=5):
-        """Run KNN classifier with cross-validation."""
-        X, y = self.prepare_features()
-
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.20, random_state=42, stratify=y
-        )
-
-        # Create pipeline with scaling
-        pipeline = Pipeline([
-            ('scaler', StandardScaler()),
-            ('knn', KNeighborsClassifier(n_neighbors=n_neighbors))
-        ])
-
-        # Train the model
-        pipeline.fit(X_train, y_train)
-
-        # Make predictions
-        y_pred = pipeline.predict(X_test)
-
-        # Calculate metrics
-        accuracy = accuracy_score(y_test, y_pred)
-        precision, recall, f1, _ = precision_recall_fscore_support(
-            y_test, y_pred, average='weighted'
-        )
-
-        # Cross-validation
-        cv = KFold(n_splits=min(cv_folds, len(X)), shuffle=True, random_state=42)
-        cv_scores = cross_val_score(pipeline, X, y, cv=cv, scoring='accuracy')
-
-        # Create confusion matrix
-        cm = confusion_matrix(y_test, y_pred)
-
-        # Plot confusion matrix
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                    xticklabels=pipeline.classes_,
-                    yticklabels=pipeline.classes_)
-        plt.title('Confusion Matrix - KNN Classifier', fontsize=14)
-        plt.xlabel('Predicted Label', fontsize=12)
-        plt.ylabel('True Label', fontsize=12)
-        plt.tight_layout()
-        plt.savefig('charts/engagement/knn_confusion_matrix.png')
-        plt.close()
-
-        # Find optimal K
-        self._find_optimal_k(X, y, max_k=min(20, len(X) - 1))
-
-        results = {
-            'model': 'KNN',
-            'accuracy': accuracy,
-            'precision': precision,
-            'recall': recall,
-            'f1_score': f1,
-            'cv_scores': cv_scores,
-            'cv_mean': cv_scores.mean(),
-            'cv_std': cv_scores.std(),
-            'trained_model': pipeline
-        }
-
-        return results
-
-    def _find_optimal_k(self, X, y, max_k=20):
-        """Find the optimal value of K for KNN classifier and save plot."""
-        k_range = range(1, max_k + 1)
-        scores = []
-
-        for k in k_range:
-            pipeline = Pipeline([
-                ('scaler', StandardScaler()),
-                ('knn', KNeighborsClassifier(n_neighbors=k))
-            ])
-            cv = KFold(n_splits=min(5, len(X)), shuffle=True, random_state=42)
-            cv_score = cross_val_score(pipeline, X, y, cv=cv, scoring='accuracy')
-            scores.append(cv_score.mean())
-
-        # Plotting the K vs Accuracy
-        plt.figure(figsize=(10, 6))
-        plt.plot(k_range, scores, marker='o', linestyle='-', color='green')
-        plt.title('K-Value vs. Cross-Validated Accuracy')
-        plt.xlabel('Number of Neighbors (K)')
-        plt.ylabel('CV Accuracy')
-        plt.xticks(k_range)
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig('charts/engagement/optimal_k_plot.png')
-        plt.close()
-
-
-# Example usage code
-if __name__ == "__main__":
-    # Sample data from your dataset7
-    file_path = '../data/edited_skill_exchange_dataset.csv'
-    processor = UserEngagementProcessor(file_path=file_path)
-    processor.clean_data()
-
-    # Create processor and process data
-    processor.clean_data()
-
-    # Visualize engagement distribution
-    processor.visualize_engagement_distribution()
-
-    # Run KNN classifier
-    results = processor.run_knn_classifier(n_neighbors=6, cv_folds=5)
-
-    # Print results
-    print("\nClassification Results for KNN:")
-    print(f"Accuracy: {results['accuracy']:.4f}")
-    print(f"Precision: {results['precision']:.4f}")
-    print(f"Recall: {results['recall']:.4f}")
-    print(f"F1 Score: {results['f1_score']:.4f}")
-    print(f"Cross-validation mean accuracy: {results['cv_mean']:.4f}")
-    print(f"Cross-validation std: {results['cv_std']:.4f}")
+    f.write("5. Top 5 Most Important Features:\n")
+    top_features = feature_importance_df.head(5)
+    for idx, row in top_features.iterrows():
+        f.write(f"   - {row['Feature']}: {row['Importance']:.4f}\n")

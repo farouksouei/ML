@@ -1,0 +1,41 @@
+KNN Model for User Engagement Prediction
+=======================================
+
+1. Data Preprocessing Steps:
+   - Converted joinedDate to datetime
+   - Created days_since_joining feature
+   - Counted items in joinedCourses, skills, and desired_skills
+   - Calculated overlaps between different skill categories
+   - Added derived features for learning progress and effectiveness
+
+2. Features Used:
+   - days_since_joining
+   - num_joined_courses
+   - num_skills
+   - num_desired_skills
+   - skills_courses_overlap
+   - desired_courses_overlap
+   - skills_desired_overlap
+   - course_effectiveness
+   - skills_acquisition_rate
+   - learning_gap
+   - isVerified
+
+3. Best Model Parameters:
+   - knn__metric: manhattan
+   - knn__n_neighbors: 11
+   - knn__weights: uniform
+
+4. Evaluation Metrics:
+   - Accuracy: 0.9400
+   - Precision: 0.9416
+   - Recall: 0.9400
+   - F1 Score: 0.9401
+   - RMSE: 0.3795
+
+5. Top 5 Most Important Features:
+   - course_effectiveness: 0.2884
+   - desired_courses_overlap: 0.1968
+   - num_joined_courses: 0.1016
+   - skills_courses_overlap: 0.0032
+   - isVerified: -0.0008

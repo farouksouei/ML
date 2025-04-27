@@ -1,0 +1,28 @@
+Before Processing Data Sample
+==================================================
+
+Shape: (10001, 8)
+
+Data Types:
+0: object
+1: object
+2: object
+3: object
+4: object
+5: object
+6: object
+7: object
+
+==================================================
+
+         0           1                                        2                                   3                                                         4           5                 6             7
+0  user_id  joinedDate                            joinedCourses                              skills                                            desired_skills  isVerified  engagement_level  peer_user_id
+1        1  2022-08-28  Machine Learning, CSS, Excel, SQL, HTML                           HTML, SQL     CSS, Java, Machine Learning, Blockchain, Data Science       False            Medium          3383
+2        2  2023-12-04  Data Science, Excel, Python, JavaScript   HTML, CSS, JavaScript, Excel, SQL                     JavaScript, Python, Java, Node.js, AI        True            Medium          5095
+3        3  2023-04-10          JavaScript, Python, Excel, Java                     HTML, CSS, Java                                         CSS, SQL, Node.js        True               Low            16
+4        4  2022-01-30              AI, Machine Learning, Excel  HTML, Excel, SQL, Java, Blockchain  SQL, Node.js, Machine Learning, Blockchain, Data Science        True            Medium          7535
+
+==================================================
+
+Numerical Statistics:
+No numerical columns found.

@@ -46,13 +46,41 @@ class DataProcessor:
             print(f"Column mismatch: {e}")
             print(f"DataFrame has {self.df.shape[1]} columns but {len(column_names)} names were provided")
 
+    def print_and_save_sample(self, prefix="", sample_size=5):
+        """Print a sample of the data and save it to a file."""
+        print(f"\n{prefix} Data Sample:")
+        print(self.df.head(sample_size))
+
+        # Create directory if it doesn't exist
+        os.makedirs('charts/dataViz', exist_ok=True)
+
+        # Save the sample to a text file
+        with open(f'charts/dataViz/{prefix.lower().replace(" ", "_")}_data_sample.txt', 'w') as f:
+            f.write(f"{prefix} Data Sample\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Shape: {self.df.shape}\n\n")
+            f.write("Data Types:\n")
+            for col, dtype in self.df.dtypes.items():
+                f.write(f"{col}: {dtype}\n")
+            f.write("\n" + "=" * 50 + "\n\n")
+            f.write(self.df.head(sample_size).to_string())
+
+            # Add some statistics
+            f.write("\n\n" + "=" * 50 + "\n\n")
+            f.write("Numerical Statistics:\n")
+            numeric_cols = self.df.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                f.write(self.df[numeric_cols].describe().to_string())
+            else:
+                f.write("No numerical columns found.")
+
     def clean_data(self):
         """Clean the data by handling dates and converting strings to lists."""
-        # Convert date strings to datetime objects
-
+        # Print and save the raw data sample
+        self.print_and_save_sample("Before Processing")
 
         # Convert skills strings to lists
-        for col in ['current_skills', 'desired_skills', 'target_skills']:
+        for col in ['skills', 'desired_skills']:
             self.df[col] = self.df[col].apply(self._string_to_list)
 
         # Convert success to boolean
@@ -82,6 +110,9 @@ class DataProcessor:
             lambda x: x['skill_overlap_count'] / len(x['target_skills']) if len(x['target_skills']) > 0 else 0,
             axis=1
         )
+
+        # Print and save the processed data sample
+        self.print_and_save_sample("After Processing")
 
         return self
 

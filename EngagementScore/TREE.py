@@ -10,7 +10,6 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support, con
 from sklearn.pipeline import Pipeline
 import os
 
-from EngagementScore.KNN import UserEngagementProcessor
 
 
 class UserEngagementDT:

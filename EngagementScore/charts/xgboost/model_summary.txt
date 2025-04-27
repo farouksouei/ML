@@ -1,0 +1,53 @@
+XGBoost Model for User Engagement Prediction
+==========================================
+
+1. Data Preprocessing Steps:
+   - Converted joinedDate to datetime
+   - Created days_since_joining feature
+   - Counted items in joinedCourses, skills, and desired_skills
+   - Calculated overlaps between different skill categories
+   - Added derived features for learning progress and effectiveness
+
+2. Features Used:
+   - days_since_joining
+   - num_joined_courses
+   - num_skills
+   - num_desired_skills
+   - skills_courses_overlap
+   - desired_courses_overlap
+   - skills_desired_overlap
+   - course_effectiveness
+   - skills_acquisition_rate
+   - learning_gap
+   - isVerified
+
+3. Model Parameters:
+   - max_depth: 5
+   - learning_rate: 0.1
+   - n_estimators: 100
+   - subsample: 0.8
+   - colsample_bytree: 0.8
+   - objective: multi:softprob
+   - num_class: 3
+   - random_state: 42
+
+4. Evaluation Metrics:
+   - Accuracy: 0.9556
+   - Precision: 0.9568
+   - Recall: 0.9556
+   - F1 Score: 0.9555
+   - RMSE: 0.3323
+
+5. Top 5 Most Important Features (Model-based):
+   - course_effectiveness: 0.6547
+   - desired_courses_overlap: 0.2349
+   - num_joined_courses: 0.0483
+   - num_desired_skills: 0.0132
+   - skills_courses_overlap: 0.0119
+
+6. Top 5 Most Important Features (Alternative Method):
+   - num_skills: 0.0004
+   - num_desired_skills: 0.0000
+   - skills_courses_overlap: 0.0000
+   - desired_courses_overlap: 0.0000
+   - skills_desired_overlap: 0.0000

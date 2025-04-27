@@ -1,0 +1,25 @@
+SVM Model for User Engagement Prediction (Simplified Version)
+=====================================================
+
+1. Data Preprocessing Steps:
+   - Converted joinedDate to datetime
+   - Created days_since_joining feature
+   - Counted items in joinedCourses, skills, and desired_skills
+
+2. Features Used:
+   - days_since_joining
+   - num_joined_courses
+   - num_skills
+   - num_desired_skills
+   - isVerified
+
+3. Model Parameters:
+   - kernel: linear
+   - C: 1.0
+
+4. Evaluation Metrics:
+   - Accuracy: 0.5005
+   - Precision: 0.4903
+   - Recall: 0.5005
+   - F1 Score: 0.4879
+
