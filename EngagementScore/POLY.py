@@ -1,15 +1,16 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.tree import DecisionTreeClassifier, plot_tree, export_text
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, PolynomialFeatures, StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, mean_squared_error
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 
 # Ensure chart directories exist
-os.makedirs('charts/decision_tree', exist_ok=True)
+os.makedirs('charts/polynomial', exist_ok=True)
 
 # Load data
 data = pd.read_csv('../data/edited_skill_exchange_dataset.csv')
@@ -94,16 +95,22 @@ y_encoded = le.fit_transform(y)
 # Split data
 X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.25, random_state=42)
 
+# Create polynomial features pipeline with logistic regression
+polynomial_pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('polynomial', PolynomialFeatures()),
+    ('classifier', LogisticRegression(max_iter=1000, random_state=42, multi_class='multinomial'))
+])
+
 # Hyperparameter tuning
 param_grid = {
-    'max_depth': [None, 3, 5, 7, 10],
-    'min_samples_split': [2, 5, 10],
-    'min_samples_leaf': [1, 2, 4],
-    'criterion': ['gini', 'entropy']
+    'polynomial__degree': [1, 2, 3],
+    'classifier__C': [0.01, 0.1, 1, 10],
+    'classifier__solver': ['lbfgs', 'saga']
 }
 
 grid_search = GridSearchCV(
-    DecisionTreeClassifier(random_state=42),
+    polynomial_pipeline,
     param_grid,
     cv=5,
     scoring='f1_weighted'
@@ -114,11 +121,10 @@ best_params = grid_search.best_params_
 print(f"Best parameters: {best_params}")
 
 # Train model with best parameters
-tree_model = DecisionTreeClassifier(random_state=42, **best_params)
-tree_model.fit(X_train, y_train)
+best_model = grid_search.best_estimator_
 
 # Evaluate model
-y_pred = tree_model.predict(X_test)
+y_pred = best_model.predict(X_test)
 
 # Calculate metrics
 accuracy = accuracy_score(y_test, y_pred)
@@ -140,74 +146,99 @@ sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
             xticklabels=le.classes_, yticklabels=le.classes_)
 plt.xlabel('Predicted')
 plt.ylabel('Actual')
-plt.title('Decision Tree Confusion Matrix')
+plt.title('Polynomial Regression Confusion Matrix')
 plt.tight_layout()
-plt.savefig('charts/decision_tree/confusion_matrix.png')
+plt.savefig('charts/polynomial/confusion_matrix.png')
 plt.close()
 
-# Feature importance
-feature_importance = tree_model.feature_importances_
-importance_df = pd.DataFrame({
-    'Feature': features,
-    'Importance': feature_importance
-})
-importance_df = importance_df.sort_values('Importance', ascending=False)
+# Get coefficients from the logistic regression model
+poly = best_model.named_steps['polynomial']
+clf = best_model.named_steps['classifier']
+feature_names = poly.get_feature_names_out(features)
+coefficients = clf.coef_
 
-plt.figure(figsize=(12, 8))
-sns.barplot(x='Importance', y='Feature', data=importance_df)
-plt.title('Decision Tree Feature Importance')
-plt.tight_layout()
-plt.savefig('charts/decision_tree/feature_importance.png')
+# For each class, show the top features
+plt.figure(figsize=(15, 10))
+for i, class_name in enumerate(le.classes_):
+    coefs = coefficients[i]
+    top_coef_indices = np.argsort(np.abs(coefs))[-10:]  # Top 10 features by magnitude
+    plt.subplot(len(le.classes_), 1, i+1)
+    plt.barh(np.array(feature_names)[top_coef_indices], coefs[top_coef_indices])
+    plt.title(f'Top Features for Class: {class_name}')
+    plt.tight_layout()
+plt.savefig('charts/polynomial/coefficients_by_class.png')
 plt.close()
 
-# Visualize decision tree
-plt.figure(figsize=(24, 12))
-plot_tree(tree_model, feature_names=features, class_names=list(le.classes_),
-          filled=True, rounded=True, fontsize=10)
-plt.title('Decision Tree Visualization')
-plt.tight_layout()
-plt.savefig('charts/decision_tree/tree_visualization.png', dpi=300, bbox_inches='tight')
-plt.close()
+# Create a learning curve
+train_sizes = np.linspace(0.1, 0.99, 5)
+train_scores = []
+test_scores = []
 
-# For deeper trees, we may want a horizontal layout
-plt.figure(figsize=(24, 16))
-plot_tree(tree_model, feature_names=features, class_names=list(le.classes_),
-          filled=True, rounded=True, fontsize=8, orientation='horizontal')
-plt.title('Decision Tree Visualization (Horizontal)')
-plt.tight_layout()
-plt.savefig('charts/decision_tree/tree_visualization_horizontal.png', dpi=300, bbox_inches='tight')
-plt.close()
+for size in train_sizes:
+    X_sub_train, _, y_sub_train, _ = train_test_split(X_train, y_train, train_size=size, random_state=42)
+    # Create a new model with the best parameters
+    model = Pipeline([
+        ('scaler', StandardScaler()),
+        ('polynomial', PolynomialFeatures(degree=best_params['polynomial__degree'])),
+        ('classifier', LogisticRegression(
+            C=best_params['classifier__C'],
+            solver=best_params['classifier__solver'],
+            max_iter=1000,
+            random_state=42,
+            multi_class='multinomial'
+        ))
+    ])
+    model.fit(X_sub_train, y_sub_train)
+    train_scores.append(accuracy_score(y_sub_train, model.predict(X_sub_train)))
+    test_scores.append(accuracy_score(y_test, model.predict(X_test)))
 
-# Text representation of the tree
-tree_text = export_text(tree_model, feature_names=features)
-with open('charts/decision_tree/tree_text.txt', 'w') as f:
-    f.write(tree_text)
-
-# Create a depth vs accuracy analysis
-max_depths = range(1, 20)
-train_accuracy = []
-test_accuracy = []
-
-for depth in max_depths:
-    model = DecisionTreeClassifier(max_depth=depth, random_state=42)
-    model.fit(X_train, y_train)
-    train_accuracy.append(accuracy_score(y_train, model.predict(X_train)))
-    test_accuracy.append(accuracy_score(y_test, model.predict(X_test)))
-
-plt.figure(figsize=(12, 6))
-plt.plot(max_depths, train_accuracy, 'o-', label='Training Accuracy')
-plt.plot(max_depths, test_accuracy, 'o-', label='Testing Accuracy')
-plt.xlabel('Max Depth')
-plt.ylabel('Accuracy')
-plt.title('Effect of Tree Depth on Accuracy')
+plt.figure(figsize=(10, 6))
+plt.plot(train_sizes, train_scores, 'o-', label='Training Score')
+plt.plot(train_sizes, test_scores, 'o-', label='Test Score')
+plt.xlabel('Training Set Size Fraction')
+plt.ylabel('Accuracy Score')
+plt.title('Polynomial Regression Learning Curve')
 plt.legend()
 plt.grid(True)
-plt.savefig('charts/decision_tree/depth_vs_accuracy.png')
+plt.savefig('charts/polynomial/learning_curve.png')
+plt.close()
+
+# Compare different polynomial degrees
+degrees = [1, 2, 3]
+degree_scores = []
+
+for degree in degrees:
+    model = Pipeline([
+        ('scaler', StandardScaler()),
+        ('polynomial', PolynomialFeatures(degree=degree)),
+        ('classifier', LogisticRegression(
+            C=best_params['classifier__C'],
+            solver=best_params['classifier__solver'],
+            max_iter=1000,
+            random_state=42,
+            multi_class='multinomial'
+        ))
+    ])
+    model.fit(X_train, y_train)
+    train_acc = accuracy_score(y_train, model.predict(X_train))
+    test_acc = accuracy_score(y_test, model.predict(X_test))
+    degree_scores.append((degree, train_acc, test_acc))
+
+plt.figure(figsize=(10, 6))
+plt.plot([d[0] for d in degree_scores], [d[1] for d in degree_scores], 'o-', label='Training Accuracy')
+plt.plot([d[0] for d in degree_scores], [d[2] for d in degree_scores], 'o-', label='Testing Accuracy')
+plt.xlabel('Polynomial Degree')
+plt.ylabel('Accuracy')
+plt.title('Effect of Polynomial Degree on Accuracy')
+plt.xticks(degrees)
+plt.legend()
+plt.grid(True)
+plt.savefig('charts/polynomial/degree_vs_accuracy.png')
 plt.close()
 
 # Create a model summary report
-with open('charts/decision_tree/model_summary.txt', 'w') as f:
-    f.write("Decision Tree Model for User Engagement Prediction\n")
+with open('charts/polynomial/model_summary.txt', 'w') as f:
+    f.write("Polynomial Regression Model for User Engagement Prediction\n")
     f.write("==========================================\n\n")
 
     f.write("1. Data Preprocessing Steps:\n")
@@ -234,10 +265,14 @@ with open('charts/decision_tree/model_summary.txt', 'w') as f:
     f.write(f"   - F1 Score: {f1:.4f}\n")
     f.write(f"   - RMSE: {rmse:.4f}\n\n")
 
-    f.write("5. Top 5 Most Important Features:\n")
-    top_features = importance_df.head(5)
-    for idx, row in top_features.iterrows():
-        f.write(f"   - {row['Feature']}: {row['Importance']:.4f}\n")
-    f.write("\n")
+    f.write("5. Summary of Polynomial Features:\n")
+    f.write(f"   - Total number of features after polynomial transformation: {len(feature_names)}\n")
+    f.write(f"   - Original features: {len(features)}\n")
+    f.write(f"   - Polynomial degree used: {best_params['polynomial__degree']}\n\n")
 
-print("Decision Tree analysis complete! Files saved in charts/decision_tree/")
+    f.write("6. Model Interpretation:\n")
+    f.write("   - The polynomial regression approach allows for modeling non-linear relationships\n")
+    f.write("   - Higher degree polynomials can capture more complex patterns, but may overfit\n")
+    f.write("   - The best degree found through cross-validation balances complexity and generalization\n")
+
+print("Polynomial Regression analysis complete! Files saved in charts/polynomial/")

@@ -1,0 +1,44 @@
+Polynomial Regression Model for User Engagement Prediction
+==========================================
+
+1. Data Preprocessing Steps:
+   - Converted joinedDate to datetime
+   - Created days_since_joining feature
+   - Counted items in joinedCourses, skills, and desired_skills
+   - Calculated overlaps between different skill categories
+   - Added derived features for learning progress and effectiveness
+
+2. Features Used:
+   - days_since_joining
+   - num_joined_courses
+   - num_skills
+   - num_desired_skills
+   - skills_courses_overlap
+   - desired_courses_overlap
+   - skills_desired_overlap
+   - course_effectiveness
+   - skills_acquisition_rate
+   - learning_gap
+   - isVerified
+
+3. Best Model Parameters:
+   - classifier__C: 10
+   - classifier__solver: lbfgs
+   - polynomial__degree: 2
+
+4. Evaluation Metrics:
+   - Accuracy: 0.9572
+   - Precision: 0.9585
+   - Recall: 0.9572
+   - F1 Score: 0.9571
+   - RMSE: 0.3262
+
+5. Summary of Polynomial Features:
+   - Total number of features after polynomial transformation: 78
+   - Original features: 11
+   - Polynomial degree used: 2
+
+6. Model Interpretation:
+   - The polynomial regression approach allows for modeling non-linear relationships
+   - Higher degree polynomials can capture more complex patterns, but may overfit
+   - The best degree found through cross-validation balances complexity and generalization

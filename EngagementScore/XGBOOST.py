@@ -214,6 +214,14 @@ plt.title('Feature Importance (Drop Column Method)')
 plt.tight_layout()
 plt.savefig('charts/xgboost/feature_importance_alt.png')
 plt.close()
+# Visualize a decision tree
+plt.figure(figsize=(30, 15))
+xgb.plot_tree(xgb_model, num_trees=0, rankdir='LR')
+plt.title('XGBoost Decision Tree (Tree 0)')
+plt.tight_layout()
+plt.savefig('charts/xgboost/decision_tree.png')
+plt.close()
+
 
 # Create summary report
 with open('charts/xgboost/model_summary.txt', 'w') as f:
