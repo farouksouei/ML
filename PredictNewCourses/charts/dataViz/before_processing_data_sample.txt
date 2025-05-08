@@ -1,0 +1,28 @@
+Before Processing Data Sample
+==================================================
+
+Shape: (10001, 8)
+
+Data Types:
+id: object
+enrollment_date: object
+current_skills: object
+desired_skills: object
+target_skills: object
+success: object
+engagement_level: object
+peer_user_id: object
+
+==================================================
+
+        id enrollment_date                           current_skills                      desired_skills                                             target_skills     success  engagement_level  peer_user_id
+0  user_id      joinedDate                            joinedCourses                              skills                                            desired_skills  isVerified  engagement_level  peer_user_id
+1        1      2022-08-28  Machine Learning, CSS, Excel, SQL, HTML                           HTML, SQL     CSS, Java, Machine Learning, Blockchain, Data Science       False            Medium          3383
+2        2      2023-12-04  Data Science, Excel, Python, JavaScript   HTML, CSS, JavaScript, Excel, SQL                     JavaScript, Python, Java, Node.js, AI        True            Medium          5095
+3        3      2023-04-10          JavaScript, Python, Excel, Java                     HTML, CSS, Java                                         CSS, SQL, Node.js        True               Low            16
+4        4      2022-01-30              AI, Machine Learning, Excel  HTML, Excel, SQL, Java, Blockchain  SQL, Node.js, Machine Learning, Blockchain, Data Science        True            Medium          7535
+
+==================================================
+
+Numerical Statistics:
+No numerical columns found.

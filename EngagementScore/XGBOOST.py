@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 
+from xgboost import plot_tree
+
 # Ensure chart directories exist
 os.makedirs('charts/xgboost', exist_ok=True)
 
@@ -215,13 +217,26 @@ plt.tight_layout()
 plt.savefig('charts/xgboost/feature_importance_alt.png')
 plt.close()
 # Visualize a decision tree
+"""
 plt.figure(figsize=(30, 15))
 xgb.plot_tree(xgb_model, num_trees=0, rankdir='LR')
 plt.title('XGBoost Decision Tree (Tree 0)')
 plt.tight_layout()
 plt.savefig('charts/xgboost/decision_tree.png')
 plt.close()
-
+"""
+"""
+# Plot a single tree from the XGBoost model
+plt.figure(figsize=(30, 20))  # You can adjust size depending on complexity
+plot_tree(xgb_model, num_trees=0, rankdir='LR',  # 'LR' = left to right layout
+          fmap='',  # feature map not necessary, already using feature names
+          ax=None,
+          )
+plt.title('Feature-Based Decision Tree (Tree 0 of XGBoost Model)', fontsize=18)
+plt.tight_layout()
+plt.savefig('charts/xgboost/feature_based_decision_tree.png')
+plt.close()
+"""
 
 # Create summary report
 with open('charts/xgboost/model_summary.txt', 'w') as f:
@@ -262,3 +277,30 @@ with open('charts/xgboost/model_summary.txt', 'w') as f:
     top_alt_features = alt_importance_df.head(5)
     for idx, row in top_alt_features.iterrows():
         f.write(f"   - {row['Feature']}: {row['Importance']:.4f}\n")
+
+
+# Add at the end of EngagementScore/XGBOOST.py
+import pickle
+import os
+
+# Create models directory if it doesn't exist
+os.makedirs('models', exist_ok=True)
+
+# Save the model
+model_path = '../models/engagement_xgboost_model.pkl'
+with open(model_path, 'wb') as f:
+    pickle.dump(xgb_model, f)
+
+# Save the label encoder
+le_path = '../models/engagement_label_encoder.pkl'
+with open(le_path, 'wb') as f:
+    pickle.dump(le, f)
+
+# Save feature list
+features_path = '../models/engagement_features.pkl'
+with open(features_path, 'wb') as f:
+    pickle.dump(features, f)
+
+print(f"\nEngagement XGBoost model saved to {model_path}")
+print(f"Label encoder saved to {le_path}")
+print(f"Feature list saved to {features_path}")

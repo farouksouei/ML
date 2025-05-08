@@ -15,6 +15,7 @@ sys.path.append('..')
 
 from DataProcessor import DataProcessor
 from PredictNewCourses.KNN import SkillRecommender
+import pickle
 
 
 def test_xgboost_recommender():
@@ -25,14 +26,46 @@ def test_xgboost_recommender():
     print("=== Testing XGBoost Skill Recommender ===")
 
     # Initialize DataProcessor and load data
-    processor = DataProcessor(file_path='../data/edited_skill_exchange_dataset.csv', columns=6)
+    processor = DataProcessor(file_path='../data/edited_skill_exchange_dataset.csv', columns=8)
     processor.df.columns = ["id", "enrollment_date", "current_skills",
-                            "desired_skills", "target_skills", "success"]
-    processor.clean_data()
+                            "desired_skills", "target_skills", "success", "engagement_level", "peer_user_id"]
+
+    # Override clean_data to work with the correct column names
+    # Convert skills strings to lists
+    for col in ['current_skills', 'desired_skills', 'target_skills']:
+        processor.df[col] = processor.df[col].apply(processor._string_to_list)
+
+    # Convert success to boolean
+    processor.df['success'] = processor.df['success'].astype(bool)
+
+    # Add additional derived features
+    processor.df['skill_count_current'] = processor.df['current_skills'].apply(len)
+    processor.df['skill_count_desired'] = processor.df['desired_skills'].apply(len)
+    processor.df['skill_count_target'] = processor.df['target_skills'].apply(len)
+
+    # Calculate skill gaps (target skills not in current)
+    processor.df['skill_gap'] = processor.df.apply(
+        lambda x: [skill for skill in x['target_skills'] if skill not in x['current_skills']],
+        axis=1
+    )
+    processor.df['skill_gap_count'] = processor.df['skill_gap'].apply(len)
+
+    # Calculate skill overlap between current and target
+    processor.df['skill_overlap'] = processor.df.apply(
+        lambda x: [skill for skill in x['target_skills'] if skill in x['current_skills']],
+        axis=1
+    )
+    processor.df['skill_overlap_count'] = processor.df['skill_overlap'].apply(len)
+
+    # Calculate learning efficiency (overlap count / target count)
+    processor.df['learning_efficiency'] = processor.df.apply(
+        lambda x: x['skill_overlap_count'] / len(x['target_skills']) if len(x['target_skills']) > 0 else 0,
+        axis=1
+    )
 
     print(f"Loaded dataset with {len(processor.df)} entries")
 
-    # Initialize recommender for data preparation
+    # Rest of the function remains the same
     base_recommender = SkillRecommender(processor)
     base_recommender.prepare_data(use_pca=False)
 
@@ -267,14 +300,139 @@ def test_sample_profiles(base_recommender, model):
                 print(f"- {skill} (confidence: {score:.4f})")
         except Exception as e:
             print(f"Error: {e}")
-            
+
+
+def save_xgboost_model(model, best_depth):
+    """Save the trained XGBoost model and related components"""
+    # Create models directory if it doesn't exist
+    os.makedirs('../models', exist_ok=True)
+
+    # Save the model
+    model_path = '../models/course_recommendation_xgboost_model.pkl'
+    with open(model_path, 'wb') as f:
+        pickle.dump(model, f)
+
+    # Save the model configuration
+    config_path = '../models/course_recommendation_config.pkl'
+    config = {
+        'max_depth': best_depth,
+        'model_type': 'xgboost',
+        'created_at': time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    with open(config_path, 'wb') as f:
+        pickle.dump(config, f)
+
+    print(f"\nCourse recommendation XGBoost model saved to {model_path}")
+    print(f"Model configuration saved to {config_path}")
+
+    return model_path, config_path
+
+
+def predict_new_courses(model, recommender, user_skills):
+    """Predict recommended courses for a user based on their current skills
+
+    Args:
+        model: Trained XGBoost model
+        recommender: SkillRecommender instance with feature configuration
+        user_skills: List of user's current skills
+
+    Returns:
+        List of (skill, confidence) tuples for recommended skills
+    """
+    try:
+        # Convert user skills to feature vector
+        if not isinstance(user_skills, list):
+            user_skills = [s.strip() for s in user_skills.split(',') if s.strip()]
+
+        # Create one-hot encoding for user skills
+        user_vector = np.zeros(len(recommender.feature_names))
+
+        for skill in user_skills:
+            # Find skill in feature names (match case-insensitive)
+            for i, feature in enumerate(recommender.feature_names):
+                if feature.lower() == skill.lower():
+                    user_vector[i] = 1
+                    break
+
+        # Reshape for prediction
+        user_vector = user_vector.reshape(1, -1)
+
+        # Make prediction
+        prediction = model.predict_proba(user_vector)
+
+        # Get skill names for each predicted class
+        skill_predictions = []
+
+        # Process each output class
+        for i, class_probs in enumerate(prediction):
+            # Get probability of positive class (class 1)
+            if len(class_probs[0]) > 1:  # Binary classifier
+                prob = class_probs[0][1]
+            else:  # If only one probability is returned
+                prob = class_probs[0][0]
+
+            # Get the skill name for this target
+            skill_name = recommender.target_names[i]
+
+            # Add to results if probability is significant and skill not already known
+            if prob > 0.2 and skill_name.lower() not in [s.lower() for s in user_skills]:
+                skill_predictions.append((skill_name, float(prob)))
+
+        # Sort by probability
+        skill_predictions.sort(key=lambda x: x[1], reverse=True)
+
+        return skill_predictions
+
+    except Exception as e:
+        print(f"Error during course prediction: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
 if __name__ == "__main__":
     # Ensure output directories exist
     os.makedirs('charts/XGBoost/skill_recommender', exist_ok=True)
 
     # Run test
-    results,model = test_xgboost_recommender()
+    results, model = test_xgboost_recommender()
 
     # Save results to CSV
     df_results = pd.DataFrame(results).T
     df_results.to_csv('charts/XGBoost/skill_recommender/xgboost_results.csv')
+
+    # Get the best depth
+    best_depth = max(results.keys(), key=lambda k: results[k]['f1_micro'])
+
+    # Initialize DataProcessor and recommender for saving base features
+    processor = DataProcessor(file_path='../data/edited_skill_exchange_dataset.csv', columns=8)
+    processor.df.columns = ["id", "enrollment_date", "current_skills",
+                            "desired_skills", "target_skills", "success", "engagement_level", "peer_user_id"]
+
+
+    # Manual data cleaning instead of using clean_data
+    for col in ['current_skills', 'desired_skills', 'target_skills']:
+        processor.df[col] = processor.df[col].apply(processor._string_to_list)
+
+    processor.df['success'] = processor.df['success'].astype(bool)
+
+    base_recommender = SkillRecommender(processor)
+    base_recommender.prepare_data(use_pca=False)
+
+    # Save the model and related components
+    model_path, config_path = save_xgboost_model(model, best_depth)
+
+    # Save feature names
+    features_path = '../models/course_recommendation_features.pkl'
+    with open(features_path, 'wb') as f:
+        pickle.dump({
+            'feature_names': base_recommender.feature_names,
+            'target_names': base_recommender.target_names
+        }, f)
+    print(f"Feature information saved to {features_path}")
+
+    # Test inference
+    test_skills = ["JavaScript", "HTML", "CSS"]
+    print(f"\nTesting inference with skills: {', '.join(test_skills)}")
+    recommendations = predict_new_courses(model, base_recommender, test_skills)
+    for skill, score in recommendations[:5]:
+        print(f"- {skill} (confidence: {score:.4f})")
